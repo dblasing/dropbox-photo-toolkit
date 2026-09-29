@@ -3,6 +3,10 @@
 What these scripts were built for, in the order it happened, including the parts
 that went wrong. Personal details are left out; the numbers are real.
 
+Two phases: consolidating a Dropbox account and a macOS Photos library into
+Google Photos, then crawling an old Windows PC for the photos that had never
+reached any cloud at all.
+
 ## The starting state
 
 A Dropbox account at roughly 120 GB, most of it one folder: an unsorted dump off
@@ -96,6 +100,65 @@ Worth remembering before you "fix" a date that looks wrong: for anything
 pre-digital, the file is telling you when it was *scanned*, and that is the only
 date that exists.
 
+## Phase two: the island on the old Windows machine
+
+With the cloud side finished, one question remained: was anything still only on
+a local machine? The candidate was an old Windows PC that had been restored from
+USB backup drives two or three times across fifteen years. Each restore carried
+forward whatever the last one held, and nothing ever pushed any of it to a cloud
+service. Photos on a machine like that are genuinely single-copy.
+
+A read-only crawl of the whole drive found 2,889 photo and video files, 24.6 GB,
+under a 40 KB floor to keep icons and web thumbnails out. Copying them into one
+folder with SHA256 dedupe produced:
+
+| | |
+| --- | --- |
+| Copied, unique | 2,785 |
+| Exact duplicates, skipped | 100 |
+| Unreadable | 4 (Windows account avatars) |
+
+2,785 + 100 + 4 = 2,889, which is the only arithmetic that matters after a job
+like this.
+
+**Most of it was not new.** Eighteen of the twenty largest folders sat under a
+synced Dropbox folder, so they were already safe and already deduped. The find
+was one folder: 215 video files, 10.2 GB, in a `Videos\old videos` directory that
+had never been anywhere but this machine and the USB drives before it.
+
+Grouping the output by original source folder (read back from the manifest)
+turned up 119 distinct source folders, and made clear how much of a whole-drive
+crawl is not photographs: web-export thumbnails from a site builder, images
+extracted from Keynote decks, scanned expense receipts, purchase orders, org
+charts, game screenshots. 1,410 of the 2,785 files were that. What was left,
+1,376 files in 15 folders, was the actual family archive.
+
+On dates: 648 of 2,513 stills had no EXIF capture date. Rather than reach for
+exiftool, a one-line histogram of file timestamps settled it — they spread
+plausibly across 2008 to 2024, with three files in the current year. Timestamps
+that plausible are a usable fallback, so no stamping was needed at all. Worth
+checking before assuming the worst.
+
+## Nine more bugs, from the Windows half
+
+| What broke | Why | Fix |
+| --- | --- | --- |
+| Unreadable files printed a wall of red and were counted as nothing | `Get-FileHash` writes a **non-terminating** error that a plain `try/catch` does not catch, so the failure count stayed at zero while files silently went missing | `-ErrorAction Stop` plus a null check on the result, and write every failed path to a file |
+| The job wedged and sat at the same file for minutes | `Get-FileHash` has no timeout. A file that never returns blocks the loop forever, and the progress line only prints every 25 files so it looks alive | Kill it and resume from the manifest. Sample the destination's size twice 30 seconds apart to tell wedged from merely slow |
+| 1,068 files suddenly became unreadable mid-run | Pausing the cloud sync client, to stop it locking files, instead made every file it manages unreadable | Do not pause the sync engine. Let it finish and retry the locked files |
+| An overnight run stopped at 57% | Windows went to sleep | `powercfg /change standby-timeout-ac 0` before any long job |
+| `cd Desktop` landed in an almost empty folder | The Desktop was redirected into OneDrive, so the real one is `%USERPROFILE%\OneDrive\Desktop` and `%USERPROFILE%\Desktop` is a leftover | Locate the file rather than assuming the path |
+| The default output folder would have uploaded 24 GB to Microsoft | The default destination was the Desktop, which was inside OneDrive | Always pass an explicit `-Dest` outside any synced folder |
+| A usage hint printed as three separate arguments | `Write-Host 'text' + $var + 'more'` does not concatenate in PowerShell; it passes positional arguments | Use the format operator: `('...{0}...' -f $var)` |
+| A one-folder batch reported the wrong count | A single-element PowerShell array slice comes back as a scalar | Wrap the slice in `@( )` |
+| Scripts refused to run in a new window | `Set-ExecutionPolicy -Scope Process` dies with the window it was set in | Prepend it to the command, or set `-Scope CurrentUser` once |
+
+The through-line from the first half held here too, and harder: **the expensive
+failure is not a crash, it is plausible output.** The 1,068 silent failures were
+caught only because failure logging had been added an hour earlier. Without it
+the run would have reported success, the folder would have looked full, and a
+thousand photos would have quietly not been there.
+
 ## Sequence that worked
 
 1. Dedupe by content hash. Free, and it shrinks everything downstream.
@@ -106,6 +169,10 @@ date that exists.
 6. Download a year at a time.
 7. Stamp missing dates. **Before** uploading.
 8. Upload, verify specific months by hand, then delete.
+
+And once the cloud side is done, the last question is whether anything survives
+only on a local machine. Old PCs restored from USB backup drives are where that
+material hides, because nothing about that lineage ever involved a network.
 
 Step 7 before step 8 is the one that cannot be reordered. Doing it backwards
 means re-uploading and then hunting down the undated copies, which is what

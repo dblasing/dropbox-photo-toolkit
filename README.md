@@ -5,6 +5,10 @@ machines, backup drives and cloud services for twenty years: exact duplicates,
 near duplicates, wrong dates, and no reliable way to tell what is already
 somewhere else.
 
+Two halves. The `bin/` scripts work on a Dropbox account. The `windows/` scripts
+crawl a local Windows machine for the photos that never made it to any cloud,
+which is where the genuinely lost material tends to be.
+
 Built to solve one specific mess and kept because the pieces are reusable. See
 [CASE-STUDY.md](CASE-STUDY.md) for what it was actually used on and what broke
 along the way.
@@ -27,6 +31,45 @@ Duplicates first, then dates, then the move.
 | `bin/stamp-dates.py` | Writes `DateTimeOriginal` into images that have none, so the destination files them by date rather than by upload day. |
 | `bin/restamp-and-gather.sh` | Repairs photos that were uploaded before they were stamped. |
 | `bin/apple-photos-inventory.sh` | Inventories a macOS Photos library to CSV by reading a copy of its index. Photos.app can stay open. |
+
+## Windows: the photos that never left the machine
+
+An old PC that has been restored from USB backup drives two or three times over
+fifteen years accumulates photos nothing else has a copy of. They were never in
+Dropbox, never on a phone, never uploaded anywhere. Two PowerShell scripts find
+them and get them out.
+
+| Script | What it does |
+| --- | --- |
+| `windows/Collect-Photos.ps1` | Crawls the machine for photos and video, hash-dedupes as it copies them into one folder, and writes a manifest mapping every file back to where it came from. Four modes: `Report` (read-only, the default), `Copy`, `Move`, and `Dates` (how many images lack an EXIF capture date). |
+| `windows/Split-ForUpload.ps1` | Breaks that folder into upload-sized batches, grouped by year, by original source folder, or by plain count. A browser drag of several thousand files stalls; 800 is reliable. |
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+.\Collect-Photos.ps1                                     # read-only report
+.\Collect-Photos.ps1 -Mode Copy -Dest C:\photos-for-google
+.\Collect-Photos.ps1 -Mode Dates -Dest C:\photos-for-google
+.\Split-ForUpload.ps1 -Source C:\photos-for-google -By Source
+```
+
+Run `Dates` **before** splitting; it only looks at the top level of the folder.
+
+Things they do on purpose:
+
+- **Copy, never move, by default.** A whole-drive crawl finds program assets,
+  game textures and browser cache. Moving those breaks software. `Move` exists
+  but demands a typed confirmation, and it refuses to delete an original whose
+  only copy it cannot verify.
+- **Skip the destination and reparse points**, so a re-run cannot ingest its own
+  output and a junction loop cannot send it in circles.
+- **Preserve modified times.** When an image has no EXIF date, that timestamp is
+  what the destination falls back on. Losing it means losing the date.
+- **Record every failure with its path**, in `failed.txt`. A file that could not
+  be read is useless as a number; you need to know which one.
+- **Refuse to write into a cloud-synced folder by accident.** The default
+  destination is the Desktop, and on a machine with a redirected Desktop that is
+  inside OneDrive. Pass `-Dest` somewhere local or you will upload the whole
+  collection to Microsoft as a side effect.
 
 ## Why the dates matter
 
@@ -147,9 +190,13 @@ Every script here follows the same three rules, learned the hard way:
 
 ## Requirements
 
-macOS or Linux, Python 3.9+, the `dropbox` and `requests` packages, and
-`exiftool` for date writing. Tested on macOS 26 with bash 3.2, which is why the
-shell scripts avoid anything newer.
+For `bin/`: macOS or Linux, Python 3.9+, the `dropbox` and `requests` packages,
+and `exiftool` for date writing. Tested on macOS 26 with bash 3.2, which is why
+the shell scripts avoid anything newer.
+
+For `windows/`: Windows PowerShell 5.1 or PowerShell 7, no modules. The `Dates`
+mode uses `System.Drawing` and wants Windows PowerShell 5.1 specifically
+(`powershell.exe`, not `pwsh`).
 
 ## License
 
