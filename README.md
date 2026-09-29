@@ -198,6 +198,34 @@ For `windows/`: Windows PowerShell 5.1 or PowerShell 7, no modules. The `Dates`
 mode uses `System.Drawing` and wants Windows PowerShell 5.1 specifically
 (`powershell.exe`, not `pwsh`).
 
+## What it cost to build
+
+These scripts were written alongside the job they were doing, over two sessions
+with Claude. Posting the meter because people ask what this kind of work
+actually costs, and the answer is rarely published.
+
+```
+Total cost:            $215.76
+Total duration (API):  2h 17m 34s
+Total duration (wall): 9h 10m 43s
+Total code changes:    2666 lines added, 168 lines removed
+
+Usage by model:
+       claude-opus-5:  19.7k input, 550.7k output, 242.6m cache read, 8.1m cache write ($215.73)
+    claude-haiku-4-5:  24.1k input, 723 output, 0 cache read, 0 cache write ($0.0277)
+
+Prompt cache (main):   19 requests · 100% of input tokens from cache · no misses
+```
+
+Nine hours of wall clock against two and a bit hours of actual API time, because
+most of the elapsed time was waiting on file transfers, uploads and an overnight
+batch job. The 2,666 lines include the scripts, their tests and the documentation
+in this repo.
+
+Worth reading next to [CASE-STUDY.md](CASE-STUDY.md), which lists the nineteen
+bugs that got shipped and fixed along the way. The cost bought working scripts
+and a cleaned-up library; it did not buy code that was right the first time.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
